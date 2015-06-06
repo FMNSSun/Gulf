@@ -1,8 +1,14 @@
 PREFIX
 +	Int				Increment
+U	List			Unlines
+L	String			Lines
+~	List			Reverse
+:	Int				RangeFromOne
 
 POSTFIX
--	Int				negative abs
+-	Int				NegativeAbs
 
 INFIX
 +	Int Int			Addition
+:	Int Int			Range
+M   List Block		Map

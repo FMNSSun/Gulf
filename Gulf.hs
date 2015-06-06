@@ -5,6 +5,7 @@ import Text.ParserCombinators.Parsec.Token
 import qualified Data.Map as M
 import Control.Monad.State
 import Data.Maybe
+import Data.List
 
 
 data Expression =
@@ -17,8 +18,14 @@ data Expression =
 
 data Literal = 
   LitInt Integer |
-  LitString String
- deriving Show
+  LitString String |
+  LitList [Literal] |
+  LitBlock Expression
+
+instance Show Literal where
+  show (LitInt i) = show i
+  show (LitString s) = s
+  show (LitList xs) = "[" ++ intercalate " " (map show xs) ++ "]"
 
 skipSpaces = optional spaces
 
@@ -34,6 +41,11 @@ manyOf' xs = do
   skipSpaces
   return e
 
+char' x = do
+  skipSpaces
+  e <- char x
+  return e
+
 parseVar :: Parser Expression
 parseVar = do
   c <- manyOf' ['a'..'z']
@@ -43,13 +55,13 @@ parseInfix :: Parser Expression
 parseInfix = do
   char ','
   e1 <- parseExpression
-  o <- oneOf' "!~+*/-"
+  o <- oneOf' "!~+*/-:M"
   e2 <- parseExpression
   return $ EInfix o e1 e2
 
 parsePrefix :: Parser Expression
 parsePrefix = do
-  o <- oneOf' "!~+"
+  o <- oneOf' "!~+LU:"
   e1 <- parseExpression
   return $ EPrefix o e1
 
@@ -64,19 +76,26 @@ parseExpression :: Parser Expression
 parseExpression = do
   skipSpaces
   e <- ((parseInfix) <|> (parsePrefix) <|> (parsePostfix) <|> (parseVar) <|> parseLiteral)
+  skipSpaces
   return e
 
 parseExpressions = many1 $ parseExpression
 
-parseLiteral = parseNumber
+parseLiteral = parseNumber <|> parseBlock
 
 parseNumber = parseIntVal
 
+parseBlock = do
+  char' '{'
+  e <- parseExpression
+  optional $ char' '}'
+  return $ ELiteral $ LitBlock e
+
 parseIntVal :: Parser Expression
 parseIntVal = do
-  n <- optionMaybe $ char '-'
+  n <- optionMaybe $ char '_'
   dg <- many1 $ oneOf ['0'..'9']
-  let sign = fromMaybe '0' n
+  let sign = if isJust n then '-' else '0'
   optional spaces
   return $ ELiteral $ LitInt (read $ sign : dg)
 
@@ -98,6 +117,12 @@ push x = do
   (stack, globals) <- get
   put (x : stack, globals)
 
+pop :: MonadGulf Literal
+pop = do
+  ((x:xs), globals) <- get
+  put (xs, globals)
+  return x
+
 eval :: Expression -> MonadGulf Literal
 eval (EPrefix prefix (ELiteral lit)) = evalPrefix prefix lit
 eval (EPrefix prefix e) = do 
@@ -118,11 +143,28 @@ eval (EPostfix postfix (ELiteral lit)) = evalPostfix postfix lit
 eval (EPostfix postfix e) = do 
   q <- eval e
   eval (EPostfix postfix (ELiteral q))
+eval (ELiteral lit) = return lit
+eval (EVar "p") = do
+ p <- pop
+ return p
+eval d = error $ show d
 
 errType xs = error $ "Wrong type for " ++ xs
 
+toStr (LitString s) = s
+toStr (LitInt i) = show i
+
+{- START PREFIX -}
 evalPrefix '+' (LitInt i) = return $ (LitInt (i + 1))
-evalPrefix '+' _ = errType "+"
+
+evalPrefix 'L' (LitString s) = return $ LitList $ (map LitString) $ lines s
+
+evalPrefix 'U' (LitList l) = return $ LitString $ unlines (map toStr l)
+
+evalPrefix '~' (LitList l) = return $ LitList (reverse l)
+
+evalPrefix ':' (LitInt i) = return $ LitList $ map LitInt $ [1..i]
+{- END PREFIX -}
 
 {- START INFIX -}
 evalInfix '+' (LitInt a) (LitInt b) = return $ (LitInt (a + b))
@@ -132,9 +174,22 @@ evalInfix '-' (LitInt a) (LitInt b) = return $ (LitInt (a - b))
 evalInfix '*' (LitInt a) (LitInt b) = return $ (LitInt (a * b))
 
 evalInfix '/' (LitInt a) (LitInt b) = return $ (LitInt (a `div` b))
+
+evalInfix ':' (LitInt a) (LitInt b) = return $ LitList $ map LitInt $ [a..b]
+
+evalInfix 'M' (LitList a) (LitBlock b) = do
+  result <- gulfMap b a
+  return $ LitList result
 {- END INFIX -}
 
 evalPostfix '-' (LitInt i)
  |i <= 0 = return (LitInt $ i)
  |otherwise = return (LitInt $ i * (-1))
 evalPostfix '-' _ = errType "+"
+
+gulfMap exp [] = return []
+gulfMap exp (x:xs) = do
+  push x
+  result <- eval exp
+  rest <- gulfMap exp xs
+  return $ result : rest
