@@ -3,12 +3,16 @@ PREFIX
 U	List			Unlines
 L	String			Lines
 ~	List			Reverse
+~	String			Reverse
 :	Int				RangeFromOne
-
+C	List			Concat
+\	List			ConcatStr
 POSTFIX
 -	Int				NegativeAbs
-
 INFIX
 +	Int Int			Addition
 :	Int Int			Range
+I	List Any		Intersperse
 M   List Block		Map
+C	List Int		ChunksOf
+C	String Int		ChunksOf

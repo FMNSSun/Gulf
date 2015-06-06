@@ -6,6 +6,7 @@ import qualified Data.Map as M
 import Control.Monad.State
 import Data.Maybe
 import Data.List
+import Data.Char
 
 
 data Expression =
@@ -55,13 +56,13 @@ parseInfix :: Parser Expression
 parseInfix = do
   char ','
   e1 <- parseExpression
-  o <- oneOf' "!~+*/-:M"
+  o <- oneOf' "!~+*/-:MIC"
   e2 <- parseExpression
   return $ EInfix o e1 e2
 
 parsePrefix :: Parser Expression
 parsePrefix = do
-  o <- oneOf' "!~+LU:"
+  o <- oneOf' "C!~+LU:\\"
   e1 <- parseExpression
   return $ EPrefix o e1
 
@@ -81,9 +82,26 @@ parseExpression = do
 
 parseExpressions = many1 $ parseExpression
 
-parseLiteral = parseNumber <|> parseBlock
+parseLiteral = parseNumber <|> parseBlock <|> parseString
 
 parseNumber = parseIntVal
+
+parseString :: Parser Expression
+parseString = do
+  char' '\''
+  str <- many $ noneOf "\"'"
+  char' '\''
+  optional spaces
+  return $ ELiteral $ LitString $ unescape str
+ where unescape ('\\' : '\\' : xs) = '\\' : unescape xs
+       unescape ('\\' : 'D' : xs) = let str = decode xs in (chr (read str)) : unescape (drop (succ (length str)) xs)
+       unescape (x : xs) = x : unescape xs
+       unescape [] = []
+       decode (x : xs)
+         |x `elem` ['0'..'9'] = x : decode xs
+         |x == ';' = []
+         |otherwise = error "Invalid escape sequence!"
+       decode [] = error "Invalid escape sequence!"
 
 parseBlock = do
   char' '{'
@@ -162,8 +180,23 @@ evalPrefix 'L' (LitString s) = return $ LitList $ (map LitString) $ lines s
 evalPrefix 'U' (LitList l) = return $ LitString $ unlines (map toStr l)
 
 evalPrefix '~' (LitList l) = return $ LitList (reverse l)
+evalPrefix '~' (LitString l) = return $ LitString (reverse l)
 
 evalPrefix ':' (LitInt i) = return $ LitList $ map LitInt $ [1..i]
+
+evalPrefix 'C' (LitList l) = return $ LitList $ concat' l
+ where concat' [] = []
+       concat' (LitList a : LitList b : xs) = (a ++ b) ++ concat' xs
+       concat' (LitList a : b : xs) = (a ++ [b]) ++ concat' xs
+       concat' (a : LitList b : xs) = ([a] ++ b) ++ concat' xs
+       concat' (a : b : xs) = ([a] ++ [b]) ++ concat' xs
+       concat' [(LitList a)] = a
+       concat' [a] = [a]
+
+evalPrefix '\\' (LitList l) = return $ LitString $ concat' l
+ where concat' [] = ""
+       concat' [LitString s] = s
+       concat' (LitString s : xs) = s ++ concat' xs
 {- END PREFIX -}
 
 {- START INFIX -}
@@ -180,6 +213,12 @@ evalInfix ':' (LitInt a) (LitInt b) = return $ LitList $ map LitInt $ [a..b]
 evalInfix 'M' (LitList a) (LitBlock b) = do
   result <- gulfMap b a
   return $ LitList result
+
+evalInfix 'I' (LitList a) b = return $ LitList (intersperse b a)
+
+evalInfix 'C' (LitList a) (LitInt b) = return $ LitList $ map LitList $ (chunksOf' b a)
+evalInfix 'C' (LitString a) (LitInt b) = return $ LitList $ map LitString $ (chunksOf' b a)
+
 {- END INFIX -}
 
 evalPostfix '-' (LitInt i)
@@ -193,3 +232,6 @@ gulfMap exp (x:xs) = do
   result <- eval exp
   rest <- gulfMap exp xs
   return $ result : rest
+
+chunksOf' _ [] = []
+chunksOf' n xs = genericTake n xs : chunksOf' n (genericDrop n xs)
