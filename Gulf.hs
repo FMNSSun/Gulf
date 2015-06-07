@@ -19,12 +19,14 @@ data Expression =
 
 data Literal = 
   LitInt Integer |
+  LitDouble Double | 
   LitString String |
   LitList [Literal] |
   LitBlock Expression
 
 instance Show Literal where
   show (LitInt i) = show i
+  show (LitDouble d) = show d
   show (LitString s) = s
   show (LitList xs) = "[" ++ intercalate " " (map show xs) ++ "]"
 
@@ -62,7 +64,7 @@ parseInfix = do
 
 parsePrefix :: Parser Expression
 parsePrefix = do
-  o <- oneOf' "C!~+LU:\\"
+  o <- oneOf' "C!~+LU:\\|"
   e1 <- parseExpression
   return $ EPrefix o e1
 
@@ -84,7 +86,7 @@ parseExpressions = many1 $ parseExpression
 
 parseLiteral = parseNumber <|> parseBlock <|> parseString
 
-parseNumber = parseIntVal
+parseNumber = (try parseDoubleVal) <|> parseIntVal
 
 parseString :: Parser Expression
 parseString = do
@@ -116,6 +118,16 @@ parseIntVal = do
   let sign = if isJust n then '-' else '0'
   optional spaces
   return $ ELiteral $ LitInt (read $ sign : dg)
+  
+parseDoubleVal :: Parser Expression
+parseDoubleVal = do
+  n <- optionMaybe $ char '_'
+  dg <- many1 $ oneOf ['0'..'9']
+  char '.'
+  dg2 <- many1 $ oneOf ['0'..'9']
+  let sign = if isJust n then '-' else '0'
+  optional spaces
+  return $ ELiteral $ LitDouble (read $ [sign] ++ dg ++ "." ++ dg2)
 
 runParserWithString p input = 
   case parse p "" input of
@@ -174,6 +186,10 @@ toStr (LitInt i) = show i
 
 {- START PREFIX -}
 evalPrefix '+' (LitInt i) = return $ (LitInt (i + 1))
+evalPrefix '+' (LitDouble d) = return $ (LitDouble (d + 1))
+
+evalPrefix '|' (LitInt i) = return $ (LitInt $ abs i)
+evalPrefix '|' (LitDouble d) = return $ (LitDouble $ abs d)
 
 evalPrefix 'L' (LitString s) = return $ LitList $ (map LitString) $ lines s
 
@@ -201,8 +217,14 @@ evalPrefix '\\' (LitList l) = return $ LitString $ concat' l
 
 {- START INFIX -}
 evalInfix '+' (LitInt a) (LitInt b) = return $ (LitInt (a + b))
+evalInfix '+' (LitInt a) (LitDouble b) = return $ (LitDouble $ (fromIntegral a) + b)
+evalInfix '+' (LitDouble a) (LitInt b) = return $ (LitDouble $ a + (fromIntegral b))
+evalInfix '+' (LitDouble a) (LitDouble b) = return $ LitDouble (a + b)
 
 evalInfix '-' (LitInt a) (LitInt b) = return $ (LitInt (a - b))
+evalInfix '-' (LitInt a) (LitDouble b) = return $ (LitDouble $ (fromIntegral a) - b)
+evalInfix '-' (LitDouble a) (LitInt b) = return $ (LitDouble $ a - (fromIntegral b))
+evalInfix '-' (LitDouble a) (LitDouble b) = return $ LitDouble (a - b)
 
 evalInfix '*' (LitInt a) (LitInt b) = return $ (LitInt (a * b))
 

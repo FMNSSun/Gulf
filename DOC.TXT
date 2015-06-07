@@ -1,5 +1,5 @@
 PREFIX
-+	Int				Increment
++	Num				Increment
 U	List			Unlines
 L	String			Lines
 ~	List			Reverse
@@ -7,10 +7,12 @@ L	String			Lines
 :	Int				RangeFromOne
 C	List			Concat
 \	List			ConcatStr
+|   Num             Abs
 POSTFIX
 -	Int				NegativeAbs
 INFIX
-+	Int Int			Addition
++	Num Num			Addition
+-   Num Num         Subtraction
 :	Int Int			Range
 I	List Any		Intersperse
 M   List Block		Map
