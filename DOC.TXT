@@ -9,7 +9,9 @@ C	List			Concat
 \	List			ConcatStr
 |   Num             Abs
 POSTFIX
--	Int				NegativeAbs
+-	Num				NegativeAbs
++   Num             AdditiveInverse
+*   Num             MultiplicativeInverse
 INFIX
 +	Num Num			Addition
 -   Num Num         Subtraction

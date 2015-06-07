@@ -48,6 +48,8 @@ char' x = do
   skipSpaces
   e <- char x
   return e
+  
+ops = "!+~?*/-:|\\" ++ ['A'..'Z']
 
 parseVar :: Parser Expression
 parseVar = do
@@ -58,13 +60,13 @@ parseInfix :: Parser Expression
 parseInfix = do
   char ','
   e1 <- parseExpression
-  o <- oneOf' "!~+*/-:MIC"
+  o <- oneOf' ops
   e2 <- parseExpression
   return $ EInfix o e1 e2
 
 parsePrefix :: Parser Expression
 parsePrefix = do
-  o <- oneOf' "C!~+LU:\\|"
+  o <- oneOf' ops
   e1 <- parseExpression
   return $ EPrefix o e1
 
@@ -72,7 +74,7 @@ parsePostfix :: Parser Expression
 parsePostfix = do
   char '.'
   e1 <- parseExpression
-  o <- oneOf' "!~+-"
+  o <- oneOf' ops
   return $ EPostfix o e1
 
 parseExpression :: Parser Expression
@@ -246,7 +248,15 @@ evalInfix 'C' (LitString a) (LitInt b) = return $ LitList $ map LitString $ (chu
 evalPostfix '-' (LitInt i)
  |i <= 0 = return (LitInt $ i)
  |otherwise = return (LitInt $ i * (-1))
-evalPostfix '-' _ = errType "+"
+evalPostfix '-' (LitDouble d)
+ |d <= 0 = return (LitDouble $ d)
+ |otherwise = return (LitDouble $ d * (-1))
+ 
+evalPostfix '+' (LitInt i) = return (LitInt (i * (-1)))
+evalPostfix '+' (LitDouble d) = return (LitDouble (d * (-1)))
+
+evalPostfix '*' (LitInt i) = return (LitDouble (1.0 / (fromIntegral i)))
+evalPostfix '*' (LitDouble d) = return (LitDouble (1.0 / d))
 
 gulfMap exp [] = return []
 gulfMap exp (x:xs) = do
