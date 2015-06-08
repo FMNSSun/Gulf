@@ -16,3 +16,4 @@ I	List Any		Intersperse
 M   List Block		Map
 C	List Int		ChunksOf
 C	String Int		ChunksOf
+R	List Block		Reduce

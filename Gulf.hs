@@ -56,7 +56,7 @@ parseInfix :: Parser Expression
 parseInfix = do
   char ','
   e1 <- parseExpression
-  o <- oneOf' "!~+*/-:MIC"
+  o <- oneOf' "!~+*/-:MICR"
   e2 <- parseExpression
   return $ EInfix o e1 e2
 
@@ -70,7 +70,7 @@ parsePostfix :: Parser Expression
 parsePostfix = do
   char '.'
   e1 <- parseExpression
-  o <- oneOf' "!~+-"
+  o <- oneOf' "!~+-S"
   return $ EPostfix o e1
 
 parseExpression :: Parser Expression
@@ -214,6 +214,10 @@ evalInfix 'M' (LitList a) (LitBlock b) = do
   result <- gulfMap b a
   return $ LitList result
 
+evalInfix 'R' (LitList a) (LitBlock b) = do
+  result <- gulfReduce b a
+  return $ result
+
 evalInfix 'I' (LitList a) b = return $ LitList (intersperse b a)
 
 evalInfix 'C' (LitList a) (LitInt b) = return $ LitList $ map LitList $ (chunksOf' b a)
@@ -224,7 +228,7 @@ evalInfix 'C' (LitString a) (LitInt b) = return $ LitList $ map LitString $ (chu
 evalPostfix '-' (LitInt i)
  |i <= 0 = return (LitInt $ i)
  |otherwise = return (LitInt $ i * (-1))
-evalPostfix '-' _ = errType "+"
+
 
 gulfMap exp [] = return []
 gulfMap exp (x:xs) = do
@@ -232,6 +236,13 @@ gulfMap exp (x:xs) = do
   result <- eval exp
   rest <- gulfMap exp xs
   return $ result : rest
+
+gulfReduce exp [a] = return a
+gulfReduce exp (a:b:xs) = do
+  push a
+  push b
+  result <- eval exp
+  gulfReduce exp (result : xs)
 
 chunksOf' _ [] = []
 chunksOf' n xs = genericTake n xs : chunksOf' n (genericDrop n xs)
