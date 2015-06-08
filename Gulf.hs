@@ -14,17 +14,20 @@ data Expression =
   EPrefix Char Expression |
   EPostfix Char Expression |
   EInfix Char Expression Expression |
+  EDyadic Char Expression Expression |
   ELiteral Literal 
  deriving Show
 
 data Literal = 
   LitInt Integer |
+  LitDouble Double | 
   LitString String |
   LitList [Literal] |
   LitBlock Expression
 
 instance Show Literal where
   show (LitInt i) = show i
+  show (LitDouble d) = show d
   show (LitString s) = s
   show (LitList xs) = "[" ++ intercalate " " (map show xs) ++ "]"
 
@@ -46,23 +49,43 @@ char' x = do
   skipSpaces
   e <- char x
   return e
+  
+ops = "!+~?*/-:|\\" ++ ['A'..'Z']
+sops = ['a'..'z']
 
 parseVar :: Parser Expression
-parseVar = do
+parseVar = (do
+  a <- char 'x'
   c <- manyOf' ['a'..'z']
-  return $ EVar c
+  return $ EVar $ a : c) <|> (do
+  c <- oneOf' ['a'..'z']
+  return $ EVar $ [c]
+  )
 
 parseInfix :: Parser Expression
-parseInfix = do
+parseInfix = (do
   char ','
   e1 <- parseExpression
-  o <- oneOf' "!~+*/-:MICR"
+  o <- oneOf' ops
   e2 <- parseExpression
-  return $ EInfix o e1 e2
+  return $ EInfix o e1 e2)
+
+parseDyadic :: Parser Expression
+parseDyadic = try (do
+  char '"'
+  o <- oneOf' (ops ++ sops)
+  e1 <- parseExpression
+  e2 <- parseExpression
+  return $ EDyadic o e1 e2) <|> (do
+   char '"'
+   e1 <- parseExpression
+   o <- oneOf' (ops ++ sops)
+   e2 <- parseExpression
+   return $ EDyadic o e1 e2)
 
 parsePrefix :: Parser Expression
 parsePrefix = do
-  o <- oneOf' "C!~+LU:\\"
+  o <- oneOf' ops
   e1 <- parseExpression
   return $ EPrefix o e1
 
@@ -70,13 +93,13 @@ parsePostfix :: Parser Expression
 parsePostfix = do
   char '.'
   e1 <- parseExpression
-  o <- oneOf' "!~+-S"
+  o <- oneOf' ops
   return $ EPostfix o e1
 
 parseExpression :: Parser Expression
 parseExpression = do
   skipSpaces
-  e <- ((parseInfix) <|> (parsePrefix) <|> (parsePostfix) <|> (parseVar) <|> parseLiteral)
+  e <- ((parseInfix) <|> (parseDyadic) <|> (parsePrefix) <|> (parsePostfix) <|> (parseVar) <|> parseLiteral)
   skipSpaces
   return e
 
@@ -84,7 +107,7 @@ parseExpressions = many1 $ parseExpression
 
 parseLiteral = parseNumber <|> parseBlock <|> parseString
 
-parseNumber = parseIntVal
+parseNumber = (try parseDoubleVal) <|> parseIntVal
 
 parseString :: Parser Expression
 parseString = do
@@ -116,6 +139,16 @@ parseIntVal = do
   let sign = if isJust n then '-' else '0'
   optional spaces
   return $ ELiteral $ LitInt (read $ sign : dg)
+  
+parseDoubleVal :: Parser Expression
+parseDoubleVal = do
+  n <- optionMaybe $ char '_'
+  dg <- many1 $ oneOf ['0'..'9']
+  char '.'
+  dg2 <- many1 $ oneOf ['0'..'9']
+  let sign = if isJust n then '-' else '0'
+  optional spaces
+  return $ ELiteral $ LitDouble (read $ [sign] ++ dg ++ "." ++ dg2)
 
 runParserWithString p input = 
   case parse p "" input of
@@ -165,6 +198,17 @@ eval (ELiteral lit) = return lit
 eval (EVar "p") = do
  p <- pop
  return p
+eval (EDyadic dy (ELiteral lit1) (ELiteral lit2)) = evalDyadic dy lit1 lit2
+eval (EDyadic dy e (ELiteral lit2)) = do 
+  q <- eval e
+  eval (EDyadic dy (ELiteral q) (ELiteral lit2))
+eval (EDyadic dy (ELiteral lit1) e) = do 
+  q <- eval e
+  eval (EDyadic dy (ELiteral lit1) (ELiteral q))
+eval (EDyadic dy c e) = do 
+  q <- eval e
+  z <- eval c
+  eval (EDyadic dy (ELiteral z) (ELiteral q))
 eval d = error $ show d
 
 errType xs = error $ "Wrong type for " ++ xs
@@ -174,6 +218,10 @@ toStr (LitInt i) = show i
 
 {- START PREFIX -}
 evalPrefix '+' (LitInt i) = return $ (LitInt (i + 1))
+evalPrefix '+' (LitDouble d) = return $ (LitDouble (d + 1))
+
+evalPrefix '|' (LitInt i) = return $ (LitInt $ abs i)
+evalPrefix '|' (LitDouble d) = return $ (LitDouble $ abs d)
 
 evalPrefix 'L' (LitString s) = return $ LitList $ (map LitString) $ lines s
 
@@ -197,12 +245,35 @@ evalPrefix '\\' (LitList l) = return $ LitString $ concat' l
  where concat' [] = ""
        concat' [LitString s] = s
        concat' (LitString s : xs) = s ++ concat' xs
+
+evalPrefix o _ = error $ "Unknown prefix operator " ++ (show o)
 {- END PREFIX -}
+
+{- START DYADIC -}
+evalDyadic 'M' (LitInt a) (LitInt b) = return $ (LitInt (max a b))
+evalDyadic 'M' (LitDouble a) (LitInt b) = return $ (LitDouble (max a (fromIntegral b)))
+evalDyadic 'M' (LitInt a) (LitDouble b) = return $ (LitDouble (max (fromIntegral a) b))
+evalDyadic 'M' (LitDouble a) (LitDouble b) = return $ (LitDouble (max a b))
+
+evalDyadic 'm' (LitInt a) (LitInt b) = return $ (LitInt (min a b))
+evalDyadic 'm' (LitDouble a) (LitInt b) = return $ (LitDouble (min a (fromIntegral b)))
+evalDyadic 'm' (LitInt a) (LitDouble b) = return $ (LitDouble (min (fromIntegral a) b))
+evalDyadic 'm' (LitDouble a) (LitDouble b) = return $ (LitDouble (min a b))
+
+evalDyadic o _ _ = error $ "Unknown dyadic_II operator " ++ (show o)
+
+{- END DYADIC -}
 
 {- START INFIX -}
 evalInfix '+' (LitInt a) (LitInt b) = return $ (LitInt (a + b))
+evalInfix '+' (LitInt a) (LitDouble b) = return $ (LitDouble $ (fromIntegral a) + b)
+evalInfix '+' (LitDouble a) (LitInt b) = return $ (LitDouble $ a + (fromIntegral b))
+evalInfix '+' (LitDouble a) (LitDouble b) = return $ LitDouble (a + b)
 
 evalInfix '-' (LitInt a) (LitInt b) = return $ (LitInt (a - b))
+evalInfix '-' (LitInt a) (LitDouble b) = return $ (LitDouble $ (fromIntegral a) - b)
+evalInfix '-' (LitDouble a) (LitInt b) = return $ (LitDouble $ a - (fromIntegral b))
+evalInfix '-' (LitDouble a) (LitDouble b) = return $ LitDouble (a - b)
 
 evalInfix '*' (LitInt a) (LitInt b) = return $ (LitInt (a * b))
 
@@ -223,11 +294,24 @@ evalInfix 'I' (LitList a) b = return $ LitList (intersperse b a)
 evalInfix 'C' (LitList a) (LitInt b) = return $ LitList $ map LitList $ (chunksOf' b a)
 evalInfix 'C' (LitString a) (LitInt b) = return $ LitList $ map LitString $ (chunksOf' b a)
 
+evalInfix o _ _ = error $ "Unknown dyadic_I operator " ++ (show o)
+
 {- END INFIX -}
 
 evalPostfix '-' (LitInt i)
  |i <= 0 = return (LitInt $ i)
  |otherwise = return (LitInt $ i * (-1))
+evalPostfix '-' (LitDouble d)
+ |d <= 0 = return (LitDouble $ d)
+ |otherwise = return (LitDouble $ d * (-1))
+ 
+evalPostfix '+' (LitInt i) = return (LitInt (i * (-1)))
+evalPostfix '+' (LitDouble d) = return (LitDouble (d * (-1)))
+
+evalPostfix '*' (LitInt i) = return (LitDouble (1.0 / (fromIntegral i)))
+evalPostfix '*' (LitDouble d) = return (LitDouble (1.0 / d))
+
+evalPostfix o _ = error $ "Unknown postfix operator " ++ (show o)
 
 
 gulfMap exp [] = return []
