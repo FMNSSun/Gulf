@@ -1,13 +1,24 @@
 PREFIX
 +	Num				Increment
 U	List			Unlines
+U	Listify
 L	String			Lines
 ~	List			Reverse
 ~	String			Reverse
+~	Listify
 :	Int				RangeFromOne
 C	List			Concat
 \	List			ConcatStr
 |   Num             Abs
+H	String			Head
+H	List			Head
+H	Listify
+T	String			Tail
+T	List			Tail
+T	Listify
+I	String			Init
+I	List			Init
+I	Listify
 POSTFIX
 -	Num				NegativeAbs
 +   Num             AdditiveInverse
@@ -17,6 +28,7 @@ DYADIC 1
 -   Num Num         Subtraction
 :	Int Int			Range
 I	List Any		Intersperse
+I	Listify Any
 M   List Block		Map
 C	List Int		ChunksOf
 C	String Int		ChunksOf

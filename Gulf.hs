@@ -216,6 +216,11 @@ errType xs = error $ "Wrong type for " ++ xs
 toStr (LitString s) = s
 toStr (LitInt i) = show i
 
+listify (LitString s) = LitList $ map (\c -> LitString [c]) s
+listify (LitList l) = LitList l
+listify (LitInt i) = LitList $ map (\c -> LitInt (read [c])) $ show (abs i)
+listify dd@(LitDouble d) = listify (LitString (toStr dd))
+
 {- START PREFIX -}
 evalPrefix '+' (LitInt i) = return $ (LitInt (i + 1))
 evalPrefix '+' (LitDouble d) = return $ (LitDouble (d + 1))
@@ -226,11 +231,25 @@ evalPrefix '|' (LitDouble d) = return $ (LitDouble $ abs d)
 evalPrefix 'L' (LitString s) = return $ LitList $ (map LitString) $ lines s
 
 evalPrefix 'U' (LitList l) = return $ LitString $ unlines (map toStr l)
+evalPrefix 'U' q = evalPrefix 'U' (listify q)
 
 evalPrefix '~' (LitList l) = return $ LitList (reverse l)
 evalPrefix '~' (LitString l) = return $ LitString (reverse l)
+evalPrefix '~' q = evalPrefix '~' (listify q)
 
 evalPrefix ':' (LitInt i) = return $ LitList $ map LitInt $ [1..i]
+
+evalPrefix 'H' (LitString s) = return $ LitString [head s]
+evalPrefix 'H' (LitList l) = return $ head l
+evalPrefix 'H' q = evalPrefix 'H' (listify q)
+
+evalPrefix 'T' (LitString s) = return $ LitString (tail s)
+evalPrefix 'T' (LitList l) = return $ LitList (tail l)
+evalPrefix 'T' q = evalPrefix 'T' (listify q)
+
+evalPrefix 'I' (LitString s) = return $ LitString (init s)
+evalPrefix 'I' (LitList l) = return $ LitList (init l)
+evalPrefix 'I' q = evalPrefix 'I' (listify q)
 
 evalPrefix 'C' (LitList l) = return $ LitList $ concat' l
  where concat' [] = []
@@ -290,6 +309,7 @@ evalInfix 'R' (LitList a) (LitBlock b) = do
   return $ result
 
 evalInfix 'I' (LitList a) b = return $ LitList (intersperse b a)
+evalInfix 'I' q b = evalInfix 'I' (listify q) b
 
 evalInfix 'C' (LitList a) (LitInt b) = return $ LitList $ map LitList $ (chunksOf' b a)
 evalInfix 'C' (LitString a) (LitInt b) = return $ LitList $ map LitString $ (chunksOf' b a)
